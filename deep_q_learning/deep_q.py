@@ -18,9 +18,9 @@ cwd = os.getcwd()
 try:
     # Load any previous models
     model = load_model(cwd + '/my_model.h5')
-    print 'Model loaded'
+    print ('Model loaded')
 except:
-    print 'Starting new model'
+    print ('Starting new model')
     # Create network. Input is two consecutive game states, output is Q-values of the possible moves.
     model = Sequential()
     model.add(Dense(20, input_shape=(2,) + env.observation_space.shape, kernel_initializer='uniform', activation='relu'))
@@ -32,44 +32,49 @@ except:
 
 # Parameters
 D = deque()                                # Register where the actions will be stored
-observetime = 500                          # Number of timesteps we will be acting on the game and observing results
+observetime = 10000                          # Number of timesteps we will be acting on the game and observing results
 epsilon = 0.7                              # Probability of doing a random move
 gamma = 0.9                                # Discounted future reward. How much we care about steps further in time
-mb_size = 5                               # Learning minibatch size
+mb_size = 100                               # Learning minibatch size
 
+tot_reward = 0.0
 
-# FIRST STEP: Knowing what each action does (Observing)
+# FIRST STEP: Keowing what each action does (Observing)
 #-----------------------------------------------------------------
 for j in range(0,10):
-    observation = env.reset()                     # Game begins
-    obs = np.expand_dims(observation, axis=0)     # (Formatting issues) Making the observation the first element of a batch of inputs
+    observation = env.reset()                                                               # Game begins
+    obs = np.expand_dims(observation, axis=0)                                               # (Formatting issues) Making the observation the first element of a batch of inputs
     state = np.stack((obs, obs), axis=1)
     done = False
     for t in range(observetime):
-        env.render()                    # Uncomment to see game running
+        env.render()                                                                        # Uncomment to see game running
         if np.random.rand() <= epsilon:
             action = np.random.randint(0, env.action_space.n, size=1)[0]
         else:
-            Q = model.predict(state)          # Q-values predictions
-            action = np.argmax(Q)             # Move with highest Q-value is the chosen one
-        observation_new, reward, done, info = env.step(action)     # See state of the game, reward... after performing the action
-        obs_new = np.expand_dims(observation_new, axis=0)          # (Formatting issues)
+            Q = model.predict(state)                                                        # Q-values predictions
+            action = np.argmax(Q)                                                           # Move with highest Q-value is the chosen one
+        observation_new, reward, done, info = env.step(action)                              # See state of the game, reward... after performing the action
+        obs_new = np.expand_dims(observation_new, axis=0)                                   # (Formatting issues)
         state_new = np.append(np.expand_dims(obs_new, axis=0), state[:, :1, :], axis=1)     # Update the input with the new state of the game
-        D.append((state, action, reward, state_new, done))         # 'Remember' action and consequence
-        state = state_new         # Update state
+        D.append((state, action, reward, state_new, done))                                  # 'Remember' action and consequence
+        state = state_new                                                                   # Update state
+        tot_reward += reward
+
         if t % 100 == 0:
             print 'frames: {}'.format(t)
         if done:
-            print('Game ended! Total reward: {}'.format(reward))
-            env.reset()           # Restart game if it's finished
-            obs = np.expand_dims(observation, axis=0)     # (Formatting issues) Making the observation the first element of a batch of inputs
+            print('Game ended! Total reward: {}'.format(tot_reward))
+            env.reset()                                                                     # Restart game if it's finished
+            obs = np.expand_dims(observation, axis=0)                                       # (Formatting issues) Making the observation the first element of a batch of inputs
             state = np.stack((obs, obs), axis=1)
+            tot_reward = 0.0
+
     print('Observing Finished')
 
 
     # SECOND STEP: Learning from the observations (Experience replay)
     #-----------------------------------------------------------------
-    minibatch = random.sample(D, mb_size)                              # Sample some moves
+    minibatch = random.sample(D, mb_size)                                                   # Sample some moves
     inputs_shape = (mb_size,) + state.shape[1:]
     inputs = np.zeros(inputs_shape)
     targets = np.zeros((mb_size, env.action_space.n))
@@ -90,6 +95,7 @@ for j in range(0,10):
             targets[i, action] = reward
         else:
             targets[i, action] = reward + gamma * np.max(Q_sa)
+
     # Train network to output the Q function
         model.train_on_batch(inputs, targets)
     print('Learning Finished')
