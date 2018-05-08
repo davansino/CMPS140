@@ -1,10 +1,11 @@
 # INITIALIZATION: libraries, parameters, network...
 
+import tensorflow as tf
 from keras.models import Sequential      # One layer after the other
 from keras.layers import Dense, Flatten  # Dense layers are fully connected layers, Flatten layers flatten out multidimensional inputs
 from collections import deque            # For storing moves
 from keras.models import load_model      # For loading models
-
+from keras.callbacks import TensorBoard
 
 import random     # For sampling batches from the observations
 import numpy as np
@@ -14,6 +15,15 @@ env = gym.make('SpaceInvaders-v0')
 
 import os
 cwd = os.getcwd()
+
+def write_log(callback, names, logs, batch_no):
+    for name, value in zip(names, logs):
+        summary = tf.Summary()
+        summary_value = summary.value.add()
+        summary_value.simple_value = value
+        summary_value.tag = name
+        callback.writer.add_summary(summary, batch_no)
+        callback.writer.flush() 
 
 try:
     # Load any previous models
@@ -30,18 +40,23 @@ except:
     model.add(Dense(env.action_space.n, kernel_initializer='uniform', activation='linear'))    # Same number of outputs as possible actions
     model.compile(loss='mse', optimizer='adam', metrics=['accuracy'])
 
+log_path = './logs'
+callback = TensorBoard(log_path)
+callback.set_model(model)
+train_names = ['train_loss']
+
 # Parameters
 D = deque()                                # Register where the actions will be stored
 observetime = 5000                          # Number of timesteps we will be acting on the game and observing results
-epsilon = 0.9                              # Probability of doing a random move
+epsilon = 0.7                              # Probability of doing a random move
 gamma = 0.9                                # Discounted future reward. How much we care about steps further in time
 mb_size = 50                               # Learning minibatch size
-
+batch_num = 0
 tot_reward = 0.0
 
 # FIRST STEP: Keowing what each action does (Observing)
 #-----------------------------------------------------------------
-for j in range(0,1):
+for j in range(0,10):
     observation = env.reset()                                                               # Game begins
     obs = np.expand_dims(observation, axis=0)                                               # (Formatting issues) Making the observation the first element of a batch of inputs
     state = np.stack((obs, obs), axis=1)
@@ -97,7 +112,9 @@ for j in range(0,1):
             targets[i, action] = reward + gamma * np.max(Q_sa)
 
     # Train network to output the Q function
-        model.train_on_batch(inputs, targets)
+        logs = model.train_on_batch(inputs, targets)
+        write_log(callback, train_names, logs, batch_num)
+        batch_num += 1
     print('Learning Finished')
     model.save(cwd + '/my_model.h5')
 
